@@ -21,16 +21,17 @@
           - lvm2
         state: latest
     
-    - name: Add Docker Repository to CentOS
-      yum_repository:
-        name: docker
-        description: Docker repo
-        baseurl: https://download.docker.com/linux/centos/docker-ce.repo
+#    - name: Add Docker Repository to CentOS
+#      yum_repository:
+#        name: docker
+#        description: Docker repo
+#        baseurl: |
+#          https://download.docker.com/linux/centos/7/x86_64/stable/repodata/repomd.xml
       
-    - name: Install Docker
-      yum:
-        name: docker-ce
-        state: latest
+#    - name: Install Docker
+#      yum:
+#        name: docker-ce
+#        state: latest
         
     - name: Update containerd config
       command: containerd config default > /etc/containerd/config.toml
@@ -58,9 +59,9 @@
         msg: Install kubelet kubeadm kubectl
 
     - name: Create kubernetes.repo file
-      lineinfile:
+      copy:
         dest: /etc/yum.repos.d/kubernetes.repo
-        line: |
+        content: |
           [kubernetes]
           name=Kubernetes
           baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
@@ -68,15 +69,14 @@
           gpgcheck=0
           repo_gpgcheck=0
           gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
-        state: present
-
+      
     - name: Install kubelet kubeadm kubectl
       yum:
         name:
           - kubelet 
           - kubeadm 
           - kubectl
-        state: latest
+        
     
     - name: Install NFS Utilities Package 
       yum:
@@ -89,8 +89,12 @@
         name: kubelet
         enabled: yes
 
-    - name: Check kubelet status
-      command: systemctl status kubelet
+#    - name: Check kubelet status
+#      command: systemctl status kubelet
+#      register: kubelet_status
+
+#    - debug:
+#        var: kubelet_status.stdout_lines
       
     - name: Remove swap from fstab
       shell: sed -i '/swap/d' /etc/fstab
@@ -99,24 +103,28 @@
       command: swapoff -a
     
     - name: Configure ip table
-      lineinfile:
+      copy:
         dest: /etc/sysctl.d/k8s.conf
-        line: |
+        content: |
           net.bridge.bridge-nf-call-ip6tables = 1
           net.bridge.bridge-nf-call-iptables = 1
           net.ipv4.ip_forward = 0
-        state: present
 
     - name: Apply system-level sysctl settings
       command: sysctl --system
   
     - name: Disable SELinux enforcement
-      lineinfile:
-        dest: /etc/selinux/config
-        line: SELINUX=permissive
-        regexp: '^SELINUX=enforcing$'
-        state: present
+      command: sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/g' /etc/selinux/config
+      notify: reboot
+
+    - name: Set SELinux to permissive
       command: setenforce 0
+      args:
+        creates: /var/run/setenforce.out
+      changed_when: False
+      when: ansible_selinux.status == 'enforcing'
+      notify: Reboot
+
 
     - name: Disable and stop firewalld
       service:
